@@ -1,0 +1,158 @@
+<html>
+    <head>
+        <title>Le Flumet 3D</title>
+
+        <meta charset="UTF-8">
+        <link rel="stylesheet" type="text/css" href="css/example2.css">
+        <link rel="stylesheet" type="text/css" href="css/LoadingScreen.css">
+
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="js/dat.gui.min.js"></script>
+    </head>
+    <body>
+        <div id="viewerDiv"></div>
+        <script src="js/GUI/GuiTools.js"></script>
+        <script src="js/itowns.js"></script>
+        <script src="js/GUI/LoadingScreen.js"></script>
+        <script src="js/debug.js"></script>
+        <script src="js/plugins/FeatureToolTip2.js"></script>
+		<script src="js/plugins/DragNDrop2.js"></script>
+		<script src="pos.js"></script>
+		<div id="credits">
+		&copy; <a href="https://www.ign.fr">IGN</a>, iTowns
+        </div>
+		
+        <script type="text/javascript">
+			//on récupère les coordonnées de l'URL.
+			function getQueryVariable(variable)
+				{
+					   var query = window.location.search.substring(1);
+					   var vars = query.split("&");
+					   for (var i=0;i<vars.length;i++) {
+							   var pair = vars[i].split("=");
+							   if(pair[0] == variable){return pair[1];}
+					   }
+					   return(false);
+				}
+				
+			if(!(location.search.substring(1)=="")){
+			x0=Math.round(getQueryVariable("x0")*1000000)/1000000;
+			y0=Math.round(getQueryVariable("y0")*1000000)/1000000;
+			alt=Math.round(getQueryVariable("alt"));}
+			console.log(x0);
+			console.log(y0);
+			console.log(alt);
+            // Define projection that we will use (taken from https://epsg.io/3946, Proj4js section)
+            itowns.proj4.defs('EPSG:3946', '+proj=lcc +lat_1=45.25 +lat_2=46.75 +lat_0=46 +lon_0=3 +x_0=1700000 +y_0=5200000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs');
+            // # Simple Globe viewer
+
+            // Define initial camera position
+            var positionOnGlobe = { longitude: x0, latitude: y0, altitude: alt };
+            var placement = {
+                coord: new itowns.Coordinates('EPSG:4326', x0, y0),
+                range: alt,
+                tilt: tilt,
+            }
+            var meshes = [];
+            var scaler;
+
+            // `viewerDiv` will contain iTowns' rendering area (`<canvas>`)
+            var viewerDiv = document.getElementById('viewerDiv');
+
+            // Instanciate iTowns GlobeView*
+            var view = new itowns.GlobeView(viewerDiv, placement);
+            //setupLoadingScreen(viewerDiv, view);
+			FeatureToolTip.init(viewerDiv, view);
+            // Add one imagery layer to the scene
+            // This layer is defined in a json file but it could be defined as a plain js
+            // object. See Layer* for more info.
+			
+            itowns.Fetcher.json('./layers/JSONLayers/Ortho.json').then(function _(config) {
+                config.source = new itowns.WMTSSource(config.source);
+                var layer = new itowns.ColorLayer('Vue aérienne', config);
+                view.addLayer(layer).then(menuGlobe.addLayerGUI.bind(menuGlobe));
+            });
+			
+            // Add two elevation layers.
+            // These will deform iTowns globe geometry to represent terrain elevation.
+            function addElevationLayerFromConfig(config) {
+                config.source = new itowns.WMTSSource(config.source);
+                var layer = new itowns.ElevationLayer(config.id, config);
+                view.addLayer(layer).then(menuGlobe.addLayerGUI.bind(menuGlobe));
+            }
+            itowns.Fetcher.json('./layers/JSONLayers/WORLD_DTM.json').then(addElevationLayerFromConfig);
+            itowns.Fetcher.json('./layers/JSONLayers/IGN_MNT.json').then(addElevationLayerFromConfig);
+itowns.Fetcher.json('./layers/JSONLayers/Cada.json').then(function _(config) {
+                config.source = new itowns.WMTSSource(config.source);
+                var layer = new itowns.ColorLayer('Cadastre', config);
+                view.addLayer(layer).then(menuGlobe.addLayerGUI.bind(menuGlobe));
+            });
+            var color = new itowns.THREE.Color();
+            var tile;
+            
+            function colorBuildings(properties) {
+                <!-- if (properties.id.indexOf('bati_remarquable') === 0) { -->
+                    <!-- return color.set(0x5555ff); -->
+                <!-- } else if (properties.id.indexOf('bati_industriel') === 0) { -->
+                    <!-- return color.set(0xff5555); -->
+                <!-- } -->
+                return color.set(0x888888);
+            }
+
+            function altitudeBuildings(properties) {
+                return properties.z_min - properties.hauteur;
+            }
+
+            function extrudeBuildings(properties) {
+                return properties.hauteur;
+            }
+
+            function acceptFeature(properties) {
+                return !!properties.hauteur;
+            }
+
+            scaler = function update(/* dt */) {
+                var i;
+                var mesh;
+                if (meshes.length) {
+                    view.notifyChange(view.camera.camera3D, true);
+                }
+                for (i = 0; i < meshes.length; i++) {
+                    mesh = meshes[i];
+                    if (mesh) {
+                        mesh.scale.z = Math.min(
+                            1.0, mesh.scale.z + 0.1);
+                        mesh.updateMatrixWorld(true);
+                    }
+                }
+                meshes = meshes.filter(function filter(m) { return m.scale.z < 1; });
+            };
+			//const atmosphere = view.getLayerById('atmosphere');
+            //atmosphere.setRealisticOn(true);
+            view.addFrameRequester(itowns.MAIN_LOOP_EVENTS.BEFORE_RENDER, scaler);
+
+            
+
+            var menuGlobe = new GuiTools('menuDiv', view);
+            // Listen for globe full initialisation event
+            view.addEventListener(itowns.GLOBE_VIEW_EVENTS.GLOBE_INITIALIZED, function () {
+                // eslint-disable-next-line no-console
+                console.info('Globe initialized');
+            });
+
+            //debug.createTileDebugUI(menuGlobe.gui, view);
+
+
+			
+
+				
+		    DragNDrop.setView(view);
+            DragNDrop.register('geojson', DragNDrop.JSON, itowns.GeoJsonParser.parse, DragNDrop.COLOR);
+            DragNDrop.register('gpx', DragNDrop.XML, itowns.GpxParser.parse, DragNDrop.COLOR);
+			
+
+
+
+        </script>
+    </body>
+</html>
